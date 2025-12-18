@@ -4,12 +4,10 @@ import sys
 import time
 import signal
 import logging
-
-# llm
+import requests
 from openai import OpenAI
 
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -19,8 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 class GracefulShutdown:
-    """Handle graceful shutdown on SIGTERM/SIGINT."""
-
     def __init__(self):
         self.shutdown_requested = False
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -29,6 +25,26 @@ class GracefulShutdown:
     def _signal_handler(self, signum, frame):
         logger.info(f"Received signal {signum}, shutting down...")
         self.shutdown_requested = True
+
+
+def wait_for_server(base_url: str, max_retries: int = 60, retry_interval: int = 5) -> bool:
+    """Wait for VLLM server to become available using /health endpoint."""
+    health_url = base_url.replace("/v1", "/health")
+    logger.info(f"Waiting for VLLM server at {health_url}...")
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(health_url, timeout=5)
+            if response.status_code == 200:
+                logger.info(f"VLLM server ready (attempt {attempt})")
+                return True
+        except requests.RequestException:
+            pass
+        logger.info(f"Not ready, retrying in {retry_interval}s ({attempt}/{max_retries})")
+        time.sleep(retry_interval)
+
+    logger.error("Server did not become available")
+    return False
 
 
 def keep_alive(
@@ -64,25 +80,7 @@ def keep_alive(
             logger.warning(f"Keep-alive failed: {e}")
 
 
-def wait_for_server(client: OpenAI, max_retries: int = 60, retry_interval: int = 5) -> bool:
-    """Wait for VLLM server to become available."""
-    logger.info("Waiting for VLLM server...")
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            client.models.list()
-            logger.info(f"VLLM server ready (attempt {attempt})")
-            return True
-        except Exception as e:
-            logger.info(f"Not ready, retrying in {retry_interval}s ({attempt}/{max_retries})")
-            time.sleep(retry_interval)
-
-    logger.error("Server did not become available")
-    return False
-
-
 def main():
-    """Main entry point."""
     vllm_host = os.getenv("VLLM_HOST", "localhost")
     vllm_port = os.getenv("VLLM_PORT", "8081")
     model = os.getenv("VLLM_MODEL", "Qwen/Qwen3-4B-Instruct-2507-FP8")
@@ -96,11 +94,11 @@ def main():
     logger.info(f"Interval: {interval}s")
 
     shutdown = GracefulShutdown()
-    client = OpenAI(base_url=base_url, api_key="not-needed")
 
-    if not wait_for_server(client):
+    if not wait_for_server(base_url):
         sys.exit(1)
 
+    client = OpenAI(base_url=base_url, api_key="not-needed")
     keep_alive(client, model, interval, shutdown)
     logger.info("Service stopped")
 

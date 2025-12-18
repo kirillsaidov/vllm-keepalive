@@ -2,12 +2,9 @@ services:
   keepalive:
     build: .
     container_name: vllm-keepalive
-	environment:
-		- VLLM_HOST="${VLLM_HOST}:localhost"
-		- VLLM_PORT="${VLLM_PORT}:8081"
-		- VLLM_MODEL="${VLLM_MODEL}:Qwen/Qwen3-4B-Instruct-2507-FP8"
-		- KEEPALIVE_INTERVAL="${KEEPALIVE_INTERVAL}:60"
+    environment:
+      - VLLM_HOST=${VLLM_HOST:-localhost}
+      - VLLM_PORT=${VLLM_PORT:-8081}
+      - VLLM_MODEL=${VLLM_MODEL:-Qwen/Qwen3-4B-Instruct-2507-FP8}
+      - KEEPALIVE_INTERVAL=${KEEPALIVE_INTERVAL:-60}
     restart: unless-stopped
-
-
-
